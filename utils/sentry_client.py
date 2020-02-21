@@ -233,6 +233,16 @@ class SentryClient:
                                               id])
         return response
 
+    def get_user_teams(self, email):
+        user_list = self.get_user(email)
+        if len(user_list) > 1:
+            raise ValueError("get_user_teams will only work for 1 "
+                             f"user per e-mail. E-mail {email} has "
+                             f"{len(user_list)} accounts")
+        user = user_list[0]
+        teams = user["teams"]
+        return teams
+
     def set_user_teams(self, email, teams):
         user_list = self.get_user(email)
         if len(user_list) > 1:
@@ -247,13 +257,7 @@ class SentryClient:
         return response
 
     def remove_user_from_teams(self, email, teams):
-        user_list = self.get_user(email)
-        if len(user_list) > 1:
-            raise ValueError("remove_user_from_teams will only work for 1 "
-                             f"user per e-mail. E-mail {email} has "
-                             f"{len(user_list)} accounts")
-        user = user_list[0]
-        user_teams = user["teams"]
+        user_teams = self.get_user_teams(email)
         for t in teams:
             if t in user_teams:
                 user_teams.remove(t)

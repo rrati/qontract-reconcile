@@ -173,7 +173,7 @@ class SentryReconciler:
         self.client = client
         self.dry_run = dry_run
 
-    def reconcile(self, current, desired):
+    def reconcile(self, current, desired, admin):
         # Reconcile the teams first
         for team in current.teams:
             if team not in desired.teams:
@@ -186,6 +186,18 @@ class SentryReconciler:
                 logging.info(["create_team", team, self.client.host])
                 if not self.dry_run:
                     self.client.create_team(team)
+
+        # Remove admin user from all teams
+        # TODO: This will result in the integration being unable to see
+        # any project and thus try to re-create them.  It appers this
+        # may need to wait for an upstream bug to be fixed:
+        # https://github.com/getsentry/sentry/issues/16723
+        admin_teams = self.client.get_user_teams(admin)
+        if len(admin_teams) > 0:
+            logging.info(["remove_user_from_team", admin, admin_teams,
+                          self.client.host])
+            if not self.dry_run:
+                self.client.remove_user_from_teams(admin, admin_teams)
 
         # Delete duplicate user accounts
         for user in current.dup_users:
@@ -558,10 +570,10 @@ def run(dry_run=False):
         host = instance['consoleUrl']
         sentry_client = SentryClient(host, token)
 
-        skip_user = secret_reader.read(
+        admin_user = secret_reader.read(
             instance['adminUser'], settings=settings)
-        current_state = fetch_current_state(sentry_client, [skip_user])
+        current_state = fetch_current_state(sentry_client, [admin_user])
         desired_state = fetch_desired_state(gqlapi, instance, github)
 
         reconciler = SentryReconciler(sentry_client, dry_run)
-        reconciler.reconcile(current_state, desired_state)
+        reconciler.reconcile(current_state, desired_state, admin_user)
