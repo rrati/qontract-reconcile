@@ -2,11 +2,14 @@ import os
 import logging
 import tempfile
 import shutil
+import threading
 
 from UnleashClient import UnleashClient
 from UnleashClient import strategies
 
 from reconcile.utils.defer import defer
+
+log_lock = threading.Lock()
 
 
 def get_feature_toggle_default(feature_name, context):
@@ -21,10 +24,10 @@ def get_feature_toggle_state(integration_name, defer=None):
         return True
 
     # hide INFO logging from UnleashClient
+    log_lock.acquire()
     logger = logging.getLogger()
     default_logging = logger.level
     logger.setLevel(logging.ERROR)
-    defer(lambda: logger.setLevel(default_logging))
 
     # create temporary cache dir
     cache_dir = tempfile.mkdtemp()
@@ -37,11 +40,13 @@ def get_feature_toggle_state(integration_name, defer=None):
                            custom_headers=headers,
                            cache_directory=cache_dir)
     client.initialize_client()
-    defer(lambda: client.destroy())
 
     # get feature toggle state
     state = client.is_enabled(integration_name,
                               fallback_function=get_feature_toggle_default)
+    client.destroy()
+    logger.setLevel(default_logging)
+    log_lock.release()
     return state
 
 
@@ -76,10 +81,10 @@ def get_unleash_strategies(api_url, token, strategy_names, defer=None):
     unleash_strategies = {name: strategies.Strategy for name in strategy_names}
 
     # hide INFO logging from UnleashClient
+    log_lock.acquire()
     logger = logging.getLogger()
     default_logging = logger.level
     logger.setLevel(logging.ERROR)
-    defer(lambda: logger.setLevel(default_logging))
 
     # create temporary cache dir
     cache_dir = tempfile.mkdtemp()
@@ -92,10 +97,15 @@ def get_unleash_strategies(api_url, token, strategy_names, defer=None):
                            cache_directory=cache_dir,
                            custom_strategies=unleash_strategies)
     client.initialize_client()
-    defer(lambda: client.destroy())
 
-    return {name: toggle.strategies
-            for name, toggle in client.features.items()}
+    strats = {name: toggle.strategies
+              for name, toggle in client.features.items()}
+    client.destroy()
+
+    logger.setLevel(default_logging)
+    log_lock.release()
+
+    return strats
 
 
 def get_feature_toggle_strategies(toggle_name, strategy_names):
